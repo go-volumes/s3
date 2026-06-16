@@ -4,13 +4,19 @@
 package sigv4
 
 import (
+	"embed"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+// Embed the official AWS SigV4 test-suite golden files so the vectors travel
+// inside the test binary — the emulated CI runs cross-compiled binaries under
+// QEMU from an arbitrary CWD, where a relative testdata/ path would not resolve.
+//
+//go:embed testdata
+var testdataFS embed.FS
 
 // AWS Signature Version 4 Test Suite credentials and parameters.
 var (
@@ -68,7 +74,7 @@ func vectors() []vector {
 
 func golden(t *testing.T, stem, ext string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join("testdata", stem+"."+ext))
+	b, err := testdataFS.ReadFile("testdata/" + stem + "." + ext)
 	if err != nil {
 		t.Fatalf("read golden %s.%s: %v", stem, ext, err)
 	}
