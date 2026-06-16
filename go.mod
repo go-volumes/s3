@@ -1,0 +1,9 @@
+module github.com/go-volumes/s3
+
+go 1.26.4
+
+require github.com/go-volumes/pool v0.0.0
+
+require github.com/go-volumes/interface v0.0.0-20260616082018-2e5aa97ae00f // indirect
+
+replace github.com/go-volumes/pool => ../pool
