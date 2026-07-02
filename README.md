@@ -1,4 +1,8 @@
-# go-volumes/s3
+# s3
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/go-volumes/s3.svg)](https://pkg.go.dev/github.com/go-volumes/s3)
+[![License: BSD-3-Clause](https://img.shields.io/badge/license-BSD--3--Clause-blue)](LICENSE)
+[![CI](https://github.com/go-volumes/s3/actions/workflows/ci.yml/badge.svg)](https://github.com/go-volumes/s3/actions/workflows/ci.yml)
 
 A pure-Go (`CGO_ENABLED=0`), from-scratch **S3-backed block store** that
 satisfies the [`go-volumes/pool`](https://github.com/go-volumes/pool)
