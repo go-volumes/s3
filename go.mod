@@ -1,6 +1,6 @@
 module github.com/go-volumes/s3
 
-go 1.26.4
+go 1.27.1
 
 require github.com/go-volumes/pool v0.0.0-20260901145335-eba8d16381ce
 
