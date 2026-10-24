@@ -42,6 +42,20 @@ jobs:
           awk -v c="$total" -v m="$COVERAGE_MIN" 'BEGIN { exit (c+0 >= m+0) ? 0 : 1 }' \
             || { echo "Coverage ${total}% below minimum ${COVERAGE_MIN}%"; exit 1; }
 
+  fuzz:
+    name: fuzz smoke ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [FuzzParseObjectLock, FuzzParseS3Error]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.2'
+      - run: go test -run '^${{ matrix.target }}$' -fuzz '^${{ matrix.target }}$' -fuzztime 60s ./client
+
   emulated:
     name: emulated (${{ matrix.arch }})
     runs-on: ubuntu-latest
