@@ -20,7 +20,7 @@ no `minio-go`. AWS Signature Version 4 is implemented from scratch on
 | Package | Purpose |
 | --- | --- |
 | `sigv4` | AWS Signature Version 4 request signer (canonical request → string-to-sign → kDate→kRegion→kService→kSigning chain → `Authorization`). Validated byte-for-byte against the official AWS *Signature Version 4 Test Suite*. |
-| `client` | Minimal S3 client over `net/http`: `Get` / `GetRange` / `Put` / `PutWithOptions` / `Delete` / `Head` / `ObjectLockConfiguration`, path-style + virtual-host addressing, XML error parsing, `404 → ErrNotFound`, injectable HTTP doer, context cancellation. |
+| `client` | Minimal S3 client over `net/http`: `Get` / `GetRange` / `Put` / `PutWithOptions` / `Delete` / `Head` / `ObjectLockConfiguration` / `List` (ListObjectsV2 with continuation tokens, 8 MiB per page, a token that does not advance is an error), path-style + virtual-host addressing, XML error parsing, `404 → ErrNotFound`, injectable HTTP doer, context cancellation. |
 
 `PutWithOptions` sends `Content-Type`, `Content-Encoding`, always
 `Content-MD5`, and Object Lock retention (`x-amz-object-lock-mode`
