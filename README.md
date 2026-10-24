@@ -20,7 +20,19 @@ no `minio-go`. AWS Signature Version 4 is implemented from scratch on
 | Package | Purpose |
 | --- | --- |
 | `sigv4` | AWS Signature Version 4 request signer (canonical request → string-to-sign → kDate→kRegion→kService→kSigning chain → `Authorization`). Validated byte-for-byte against the official AWS *Signature Version 4 Test Suite*. |
-| `client` | Minimal S3 client over `net/http`: `Get` / `GetRange` / `Put` / `Delete` / `Head`, path-style + virtual-host addressing, XML error parsing, `404 → ErrNotFound`, injectable HTTP doer, context cancellation. |
+| `client` | Minimal S3 client over `net/http`: `Get` / `GetRange` / `Put` / `PutWithOptions` / `Delete` / `Head` / `ObjectLockConfiguration`, path-style + virtual-host addressing, XML error parsing, `404 → ErrNotFound`, injectable HTTP doer, context cancellation. |
+
+`PutWithOptions` sends `Content-Type`, `Content-Encoding`, always
+`Content-MD5`, and Object Lock retention (`x-amz-object-lock-mode`
+`GOVERNANCE`/`COMPLIANCE` with `x-amz-object-lock-retain-until-date`) — Amazon
+S3 API Reference, PutObject: "The `Content-MD5` … header is required for any
+request to upload an object with a retention period configured using Amazon S3
+Object Lock". `ObjectLockConfiguration` reads `GET /?object-lock`
+(GetObjectLockConfiguration); a bucket without one (404/400
+`ObjectLockConfigurationNotFoundError`, 501) reads as not enabled. MinIO and
+Ceph RGW both implement the bucket call; Object Lock must be enabled when the
+bucket is created and needs versioning. The two XML parsers are fuzzed
+(`FuzzParseObjectLock`, `FuzzParseS3Error`).
 | `s3` (root) | `Store` implementing `pool.Backing` (`ReadAt`, `WriteAt`, `Truncate`, `Sync`, `Close`) over fixed-size chunk objects + a write-back cache + a persisted metadata object. |
 
 ## Design

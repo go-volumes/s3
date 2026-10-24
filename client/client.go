@@ -12,6 +12,8 @@ package client
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-volumes/s3/sigv4"
 )
@@ -125,7 +128,23 @@ func (c *Client) requestError(resp *http.Response) error {
 
 // do signs and sends a request, returning the response for 2xx or an error.
 func (c *Client) do(ctx context.Context, method, key string, body []byte, rangeHdr string) (*http.Response, error) {
+	var hdr http.Header
+	if rangeHdr != "" {
+		hdr = http.Header{"Range": {rangeHdr}}
+	}
+	return c.doWith(ctx, method, key, "", body, hdr)
+}
+
+// doWith is do with a raw query (a bucket sub-resource such as "object-lock")
+// and extra headers, which are signed with the rest.
+func (c *Client) doWith(ctx context.Context, method, key, query string, body []byte, hdr http.Header) (*http.Response, error) {
 	u, host := c.urlFor(key)
+	if key == "" && c.pathStyle {
+		// A bucket-level request: endpoint/bucket, no trailing slash.
+		u.Path = "/" + c.bucket
+		u.RawPath = sigv4.EncodePath(c.bucket)
+	}
+	u.RawQuery = query
 	var rdr io.Reader
 	if body != nil {
 		rdr = strings.NewReader(string(body))
@@ -139,8 +158,10 @@ func (c *Client) do(ctx context.Context, method, key string, body []byte, rangeH
 	if body != nil {
 		req.ContentLength = int64(len(body))
 	}
-	if rangeHdr != "" {
-		req.Header.Set("Range", rangeHdr)
+	for k, vs := range hdr {
+		for _, v := range vs {
+			req.Header.Add(k, v)
+		}
 	}
 	payloadHash := sigv4.HashSHA256(body)
 	c.signer.Sign(req, payloadHash, nowUTC())
@@ -193,6 +214,103 @@ func (c *Client) Put(ctx context.Context, key string, body []byte) error {
 	}
 	resp.Body.Close()
 	return nil
+}
+
+// PutOptions are the optional headers of a PutObject request (Amazon S3 API
+// Reference, PutObject).
+type PutOptions struct {
+	ContentType     string
+	ContentEncoding string
+	// LockMode, "GOVERNANCE" or "COMPLIANCE", with RetainUntil, puts the
+	// object under Object Lock retention (x-amz-object-lock-mode and
+	// x-amz-object-lock-retain-until-date). The bucket must have Object Lock
+	// enabled (see ObjectLockEnabled), which also needs versioning.
+	LockMode    string
+	RetainUntil time.Time
+}
+
+// PutWithOptions stores body under key with the given headers. It always
+// sends Content-MD5 (RFC 1864), which S3 requires for an upload with an
+// Object Lock retention period and checks on every other one.
+func (c *Client) PutWithOptions(ctx context.Context, key string, body []byte, opts PutOptions) error {
+	if body == nil {
+		body = []byte{}
+	}
+	hdr := http.Header{}
+	sum := md5.Sum(body)
+	hdr.Set("Content-MD5", base64.StdEncoding.EncodeToString(sum[:]))
+	if opts.ContentType != "" {
+		hdr.Set("Content-Type", opts.ContentType)
+	}
+	if opts.ContentEncoding != "" {
+		hdr.Set("Content-Encoding", opts.ContentEncoding)
+	}
+	if opts.LockMode != "" {
+		if opts.LockMode != "GOVERNANCE" && opts.LockMode != "COMPLIANCE" {
+			return fmt.Errorf("s3: object lock mode %q: want GOVERNANCE or COMPLIANCE", opts.LockMode)
+		}
+		if opts.RetainUntil.IsZero() {
+			return errors.New("s3: an object lock mode needs a retain-until date")
+		}
+		hdr.Set("X-Amz-Object-Lock-Mode", opts.LockMode)
+		hdr.Set("X-Amz-Object-Lock-Retain-Until-Date", opts.RetainUntil.UTC().Format(time.RFC3339))
+	}
+	resp, err := c.doWith(ctx, http.MethodPut, key, "", body, hdr)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+
+// ObjectLock is a bucket's Object Lock configuration
+// (GetObjectLockConfiguration).
+type ObjectLock struct {
+	Enabled bool
+	// The bucket's default retention, if it has one.
+	Mode  string
+	Days  int
+	Years int
+}
+
+// ObjectLockConfiguration reads the bucket's Object Lock configuration
+// (GET /?object-lock). A bucket without one — S3 answers 404
+// ObjectLockConfigurationNotFoundError, some servers 400 or 501 — is
+// reported as not enabled, not as an error.
+func (c *Client) ObjectLockConfiguration(ctx context.Context) (ObjectLock, error) {
+	resp, err := c.doWith(ctx, http.MethodGet, "", "object-lock", nil, nil)
+	if err != nil {
+		var se *Error
+		if errors.Is(err, ErrNotFound) || errors.As(err, &se) && (se.Code == "ObjectLockConfigurationNotFoundError" || se.StatusCode == http.StatusNotImplemented) {
+			return ObjectLock{}, nil
+		}
+		return ObjectLock{}, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return ObjectLock{}, fmt.Errorf("s3: reading the object lock configuration: %w", err)
+	}
+	return parseObjectLock(body)
+}
+
+func parseObjectLock(body []byte) (ObjectLock, error) {
+	var x struct {
+		XMLName           xml.Name `xml:"ObjectLockConfiguration"`
+		ObjectLockEnabled string
+		Rule              struct {
+			DefaultRetention struct {
+				Mode  string
+				Days  int
+				Years int
+			}
+		}
+	}
+	if err := xml.Unmarshal(body, &x); err != nil {
+		return ObjectLock{}, fmt.Errorf("s3: the object lock configuration is not one: %w", err)
+	}
+	r := x.Rule.DefaultRetention
+	return ObjectLock{Enabled: x.ObjectLockEnabled == "Enabled", Mode: r.Mode, Days: r.Days, Years: r.Years}, nil
 }
 
 // Delete removes key. A 404 is not an error (delete is idempotent).
